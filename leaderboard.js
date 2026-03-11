@@ -120,7 +120,8 @@ window.LeaderboardAPI = (() => {
       return;
     }
 
-    if (!window.ScoreModal) {
+    // ScoreModal is a top-level const in game.js — not on window, but in global scope
+    if (typeof ScoreModal === 'undefined') {
       _showError('Game not ready — play a round first.');
       _setSubmitState(btn, 'idle');
       return;
