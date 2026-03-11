@@ -32,23 +32,10 @@ const ASSET_TO_ANIMAL = {};
 const ALGO_INDEXER = 'https://mainnet-idx.algonode.cloud';
 
 // ──────────────────────────────────────────────────────────────────
-//  SDK READINESS
-//  The Pera ESM module script fires 'peraSDKReady' when done.
-//  We queue connect() calls until that event fires.
+//  SDK is pre-bundled in pera-wallet.js (loaded via <script> tag in
+//  index.html) and assigns window.PeraWalletConnect synchronously.
+//  No CDN or dynamic import needed.
 // ──────────────────────────────────────────────────────────────────
-let _sdkReady   = false;
-let _sdkPromise = new Promise(resolve => {
-  // If the SDK already loaded before this script ran, resolve immediately
-  if (window.PeraWalletConnect) {
-    _sdkReady = true;
-    resolve();
-    return;
-  }
-  window.addEventListener('peraSDKReady', () => {
-    _sdkReady = true;
-    resolve();
-  }, { once: true });
-});
 
 // ──────────────────────────────────────────────────────────────────
 //  MODULE  (IIFE — private state, exposed via window.WalletAPI)
@@ -59,40 +46,20 @@ window.WalletAPI = (() => {
   let _assets      = [];
   let _reconnected = false;
 
-  // ── Create Pera client (called once after SDK is ready) ──────────
-  function _createClient() {
+  // ── Get or create Pera client ────────────────────────────────────
+  function _getClient() {
     if (_peraClient) return _peraClient;
 
     if (!window.PeraWalletConnect) {
       throw new Error(
-        window._peraSDKError
-          ? `Pera SDK failed to load: ${window._peraSDKError}`
-          : 'Pera SDK not ready yet — try again in a moment.'
+        'Pera Wallet SDK not loaded — make sure pera-wallet.js is in the same folder as index.html.'
       );
     }
 
-    if (WALLETCONNECT_PROJECT_ID === 'YOUR_WALLETCONNECT_PROJECT_ID') {
-      throw new Error(
-        'Missing WalletConnect Project ID.\n' +
-        'Get a free one at cloud.walletconnect.com and paste it\n' +
-        'into WALLETCONNECT_PROJECT_ID in wallet.js.'
-      );
-    }
+    // Note: v1.x uses WalletConnect v1 bridge (Pera's own relay, not the deprecated public one)
+    _peraClient = new window.PeraWalletConnect();
 
-    _peraClient = new window.PeraWalletConnect({
-      projectId: WALLETCONNECT_PROJECT_ID,
-      // Metadata shown inside the Pera Wallet app during connection
-      metadata: {
-        name:        'Crazy-ASS Zoologists',
-        description: 'NFT Zoo Tycoon',
-        url:         window.location.origin,
-        icons:       ['https://drdrank.github.io/Crazyasszoologists/favicon.ico'],
-      },
-    });
-
-    // v2 disconnect event
     _peraClient.connector?.on?.('disconnect', _handleDisconnect);
-
     return _peraClient;
   }
 
@@ -100,9 +67,7 @@ window.WalletAPI = (() => {
   async function connect() {
     _updateUI('connecting');
     try {
-      // Wait for the ESM module to finish loading (usually instant after page load)
-      await _sdkPromise;
-      const client   = _createClient();
+      const client   = _getClient();
       const accounts = await client.connect();
       if (accounts && accounts.length > 0) {
         await _onConnected(accounts[0]);
@@ -110,11 +75,10 @@ window.WalletAPI = (() => {
         _updateUI('disconnected');
       }
     } catch (err) {
-      // User closed the QR modal — not an error worth showing
       const cancelled =
         err?.data?.type === 'CONNECT_MODAL_CLOSED' ||
-        err?.message?.includes('closed') ||
-        err?.message?.includes('cancelled');
+        err?.message?.toLowerCase().includes('closed') ||
+        err?.message?.toLowerCase().includes('cancelled');
 
       if (!cancelled) {
         console.error('[WalletAPI] connect error:', err);
@@ -150,9 +114,7 @@ window.WalletAPI = (() => {
     if (_reconnected) return;
     _reconnected = true;
     try {
-      await _sdkPromise;
-      if (window._peraSDKError) return; // SDK failed — skip silently
-      const client   = _createClient();
+      const client   = _getClient();
       const accounts = await client.reconnectSession();
       if (accounts && accounts.length > 0) {
         await _onConnected(accounts[0]);

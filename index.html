@@ -7,23 +7,8 @@
   <link rel="stylesheet" href="style.css" />
   <!-- Supabase JS (UMD — exposes window.supabase) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!--
-    Pera Wallet Connect v2  (uses WalletConnect v2 — v1 relay servers are shut down)
-    esm.sh handles all browser polyfills + dependency bundling automatically.
-    After this module runs, window.PeraWalletConnect is available and
-    window.dispatchEvent fires 'peraSDKReady' so wallet.js can initialise.
-  -->
-  <script type="module">
-    try {
-      const { PeraWalletConnect } = await import('https://esm.sh/@perawallet/connect@2');
-      window.PeraWalletConnect = PeraWalletConnect;
-      window.dispatchEvent(new CustomEvent('peraSDKReady'));
-    } catch (err) {
-      console.error('[Pera] SDK failed to load:', err);
-      window._peraSDKError = err.message;
-      window.dispatchEvent(new CustomEvent('peraSDKReady')); // unblock waiters even on error
-    }
-  </script>
+  <!-- Pera Wallet Connect — self-hosted bundle (no CDN required) -->
+  <script src="pera-wallet.js"></script>
 </head>
 <body>
   <div id="app">
