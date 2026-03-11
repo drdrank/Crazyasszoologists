@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crazy-ASS Zoologists: NFT Zoo Tycoon</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ═══════════════════════════════════════════
+         MAIN MENU OVERLAY
+    ════════════════════════════════════════════ -->
+    <div id="main-menu" class="fullscreen-overlay">
+      <div class="menu-card">
+        <div class="menu-logo">🦁</div>
+        <h1 class="menu-title">Crazy-ASS<br>Zoologists</h1>
+        <p class="menu-subtitle">NFT Zoo Tycoon</p>
+        <div class="menu-tagline">"Build cages. Buy meme animals.<br>Rug visitors for profit."</div>
+        <div class="menu-buttons">
+          <button class="menu-btn primary" onclick="startGame()">🎮 Start Game</button>
+        </div>
+        <div class="menu-footer">
+          Arrow keys / WASD to pan camera &nbsp;·&nbsp; ESC to deselect tool<br>
+          Right-click drag to pan &nbsp;·&nbsp; Shortcuts: F P W 1–9
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         PAUSE OVERLAY
+    ════════════════════════════════════════════ -->
+    <div id="pause-overlay" class="fullscreen-overlay hidden">
+      <div class="menu-card">
+        <div class="pause-icon">⏸</div>
+        <h2 class="menu-title" style="font-size:28px">PAUSED</h2>
+        <p class="menu-subtitle" style="font-size:13px">The zoo is... resting.</p>
+        <div class="menu-buttons">
+          <button class="menu-btn primary"  onclick="resumeGame()">▶ Resume</button>
+          <button class="menu-btn"          onclick="newGame()">🔄 New Game</button>
+          <button class="menu-btn danger"   onclick="exitToMenu()">🏠 Back to Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         TOP HUD BAR
+    ════════════════════════════════════════════ -->
+    <header id="top-bar">
+      <div id="title">🦁 Crazy-ASS Zoologists</div>
+
+      <div id="stats">
+        <span id="money-display">💰 $500</span>
+        <span id="visitor-display">👥 0</span>
+        <span id="income-display">📈 $0/s</span>
+        <span id="event-ticker"></span>
+      </div>
+
+      <div id="game-controls">
+        <button class="ctrl-btn" id="btn-undo"        onclick="undo()"        title="Undo last action [Z]" disabled>↩ Undo</button>
+        <button class="ctrl-btn" id="btn-sound-sfx"   onclick="toggleSFX()"   title="Toggle sound effects">🔊</button>
+        <button class="ctrl-btn" id="btn-sound-music" onclick="toggleMusic()" title="Toggle music">🎵</button>
+        <button class="ctrl-btn" id="btn-pause"       onclick="togglePause()" title="Pause / Resume">⏸</button>
+        <button class="ctrl-btn" id="btn-new-game"    onclick="newGame()"     title="New Game">🔄</button>
+        <button class="ctrl-btn danger" id="btn-menu" onclick="exitToMenu()"  title="Back to Menu">🏠</button>
+      </div>
+    </header>
+
+    <!-- ═══════════════════════════════════════════
+         MAIN GAME AREA
+    ════════════════════════════════════════════ -->
+    <div id="game-container">
+
+      <!-- LEFT SIDEBAR -->
+      <aside id="sidebar">
+
+        <!-- BUILD -->
+        <div class="panel-section">
+          <div class="panel-title">🔨 BUILD</div>
+          <button class="tool-btn" id="btn-fence" onclick="selectTool('fence')">
+            🪵 Fence <span class="cost">$10</span>
+          </button>
+          <button class="tool-btn" id="btn-path" onclick="selectTool('path')">
+            🛤️ Path <span class="cost">$5</span>
+          </button>
+          <button class="tool-btn" id="btn-water" onclick="selectTool('water')">
+            💧 Water <span class="cost">$15</span>
+          </button>
+        </div>
+
+        <!-- LANDSCAPING -->
+        <div class="panel-section">
+          <div class="panel-title">🌿 LANDSCAPING</div>
+          <button class="tool-btn" id="btn-grass_flower" onclick="selectTool('grass_flower')">
+            🌸 Flowers <span class="cost">$8</span>
+          </button>
+          <button class="tool-btn" id="btn-grass_tree" onclick="selectTool('grass_tree')">
+            🌳 Trees <span class="cost">$20</span>
+          </button>
+        </div>
+
+        <!-- BUILDINGS -->
+        <div class="panel-section">
+          <div class="panel-title">🏗️ BUILDINGS</div>
+          <button class="tool-btn building-btn" id="btn-restaurant" onclick="selectTool('restaurant')">
+            🍽️ Restaurant <span class="cost">$300</span>
+          </button>
+          <button class="tool-btn building-btn" id="btn-ice_cream" onclick="selectTool('ice_cream')">
+            🍦 Ice Cream <span class="cost">$150</span>
+          </button>
+          <button class="tool-btn building-btn" id="btn-gift_shop" onclick="selectTool('gift_shop')">
+            🎁 Gift Shop <span class="cost">$200</span>
+          </button>
+          <button class="tool-btn building-btn" id="btn-snack_stand" onclick="selectTool('snack_stand')">
+            🌭 Snack Stand <span class="cost">$100</span>
+          </button>
+        </div>
+
+        <!-- LARGE EXHIBITS -->
+        <div class="panel-section">
+          <div class="panel-title">🏛️ EXHIBITS</div>
+          <button class="tool-btn building-btn locked" id="btn-glass_house" onclick="selectTool('glass_house')">
+            🏛 Glass House <span class="cost">$500</span>
+          </button>
+          <button class="tool-btn building-btn locked" id="btn-reptile_house" onclick="selectTool('reptile_house')">
+            🦎 Reptile House <span class="cost">$600</span>
+          </button>
+          <button class="tool-btn building-btn locked" id="btn-aquarium" onclick="selectTool('aquarium')">
+            🐠 Aquarium <span class="cost">$800</span>
+          </button>
+        </div>
+
+        <!-- GLASS HOUSE ANIMALS -->
+        <div class="panel-section">
+          <div class="panel-title">🏛 GLASS HOUSE</div>
+          <button class="tool-btn" id="btn-butterfly" onclick="selectTool('butterfly')">🦋 Butterfly <span class="cost">$60</span></button>
+          <button class="tool-btn" id="btn-spider"    onclick="selectTool('spider')">🕷 Spider <span class="cost">$40</span></button>
+          <button class="tool-btn" id="btn-snake"     onclick="selectTool('snake')">🐍 Snake <span class="cost">$80</span></button>
+        </div>
+
+        <!-- AQUARIUM ANIMALS -->
+        <div class="panel-section">
+          <div class="panel-title">🐠 AQUARIUM</div>
+          <button class="tool-btn" id="btn-fish"    onclick="selectTool('fish')">🐟 Fish <span class="cost">$50</span></button>
+          <button class="tool-btn" id="btn-dolphin" onclick="selectTool('dolphin')">🐬 Dolphin <span class="cost">$300</span></button>
+          <button class="tool-btn" id="btn-shark"   onclick="selectTool('shark')">🦈 Shark <span class="cost">$400</span></button>
+        </div>
+
+        <!-- ANIMALS – ORIGINAL -->
+        <div class="panel-section">
+          <div class="panel-title">🐾 NFT ORIGINALS</div>
+          <button class="tool-btn" id="btn-donkey"      onclick="selectTool('donkey')">🫏 Donkey <span class="cost">$50</span></button>
+          <button class="tool-btn" id="btn-mega_donkey" onclick="selectTool('mega_donkey')">🐴 Mega Donkey <span class="cost">$200</span></button>
+          <button class="tool-btn" id="btn-cheetah"     onclick="selectTool('cheetah')">🐆 Cheetah <span class="cost">$150</span></button>
+          <button class="tool-btn" id="btn-puffin"      onclick="selectTool('puffin')">🐧 Puffin <span class="cost">$80</span></button>
+        </div>
+
+        <!-- ANIMALS – NEW -->
+        <div class="panel-section">
+          <div class="panel-title">🌍 EXOTIC ROSTER</div>
+          <button class="tool-btn" id="btn-lion"      onclick="selectTool('lion')">🦁 Lion <span class="cost">$250</span></button>
+          <button class="tool-btn" id="btn-tiger"     onclick="selectTool('tiger')">🐯 Tiger <span class="cost">$300</span></button>
+          <button class="tool-btn" id="btn-elephant"  onclick="selectTool('elephant')">🐘 Elephant <span class="cost">$400</span></button>
+          <button class="tool-btn" id="btn-giraffe"   onclick="selectTool('giraffe')">🦒 Giraffe <span class="cost">$200</span></button>
+          <button class="tool-btn" id="btn-zebra"     onclick="selectTool('zebra')">🦓 Zebra <span class="cost">$150</span></button>
+          <button class="tool-btn" id="btn-monkey"    onclick="selectTool('monkey')">🐒 Monkey <span class="cost">$120</span></button>
+          <button class="tool-btn" id="btn-panda"     onclick="selectTool('panda')">🐼 Panda <span class="cost">$350</span></button>
+          <button class="tool-btn" id="btn-penguin"   onclick="selectTool('penguin')">🐧 Penguin <span class="cost">$100</span></button>
+          <button class="tool-btn" id="btn-crocodile" onclick="selectTool('crocodile')">🐊 Croc <span class="cost">$250</span></button>
+          <button class="tool-btn" id="btn-flamingo"  onclick="selectTool('flamingo')">🦩 Flamingo <span class="cost">$175</span></button>
+        </div>
+
+        <!-- INFO -->
+        <div class="panel-section">
+          <div class="panel-title">ℹ️ INFO</div>
+          <div id="tool-hint">Press Start to begin!</div>
+          <div class="hint-esc">[ESC] / right-click = deselect</div>
+        </div>
+
+        <!-- ZOO STATS -->
+        <div class="panel-section">
+          <div class="panel-title">📊 ZOO STATS</div>
+          <div class="stat-row level-row"><span id="stat-level">Lv1 — Zoo Apprentice</span></div>
+          <div id="xp-bar"><div id="xp-bar-fill"></div></div>
+          <div class="stat-row"><span>XP:</span><span id="stat-xp">0/80</span></div>
+          <div class="stat-row"><span>Beauty:</span><span id="stat-beauty">0</span></div>
+          <div class="stat-row"><span>Animals:</span><span id="stat-animals">0</span></div>
+          <div class="stat-row"><span>Visitors:</span><span id="stat-visitors">0</span></div>
+          <div class="stat-row"><span>Buildings:</span><span id="stat-buildings">0</span></div>
+          <div class="stat-row"><span>Total earned:</span><span id="stat-earned">$0</span></div>
+        </div>
+
+        <!-- CAMERA -->
+        <div class="panel-section">
+          <div class="panel-title">🎥 CAMERA</div>
+          <div class="camera-pad">
+            <button class="cam-btn" onclick="nudgeCamera(0,-1)">▲</button>
+            <div class="cam-row">
+              <button class="cam-btn" onclick="nudgeCamera(-1,0)">◀</button>
+              <button class="cam-btn" onclick="centerCamera()">⊙</button>
+              <button class="cam-btn" onclick="nudgeCamera(1,0)">▶</button>
+            </div>
+            <button class="cam-btn" onclick="nudgeCamera(0,1)">▼</button>
+          </div>
+          <div class="hint-esc">WASD / arrow keys to pan</div>
+        </div>
+
+      </aside>
+
+      <!-- CANVAS AREA -->
+      <div id="canvas-wrap">
+        <canvas id="gameCanvas"></canvas>
+        <canvas id="minimapCanvas"></canvas>
+        <div id="event-popup" class="hidden"></div>
+      </div>
+
+    </div><!-- end game-container -->
+  </div><!-- end app -->
+
+  <script src="game.js"></script>
+</body>
+</html>
