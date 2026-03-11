@@ -1319,7 +1319,7 @@ function drawTiles(sx, sy, ex, ey) {
       switch (t) {
         case TILE.GRASS:       drawGrass(px, py, x, y);      break;
         case TILE.FENCE:       drawFence(px, py);             break;
-        case TILE.PATH:        drawPath(px, py);              break;
+        case TILE.PATH:        drawPath(px, py, x, y);        break;
         case TILE.WATER:       drawWater(px, py, x, y);       break;
         case TILE.ENTRANCE:    drawEntrance(px, py);          break;
         case TILE.RESTAURANT:  drawBuilding(px, py, '🍽', '#c0392b', '#e74c3c'); break;
@@ -1334,18 +1334,58 @@ function drawTiles(sx, sy, ex, ey) {
   }
 }
 
+// 6 grass base/blade colour pairs for natural-looking terrain variation
+const GRASS_VARS = [
+  { base: '#3a7a38', blade: '#4a9e4a' },
+  { base: '#3d7a3d', blade: '#52a44a' },
+  { base: '#417d3c', blade: '#4da050' },
+  { base: '#3c7840', blade: '#479c4c' },
+  { base: '#45823f', blade: '#56a84e' },
+  { base: '#387a42', blade: '#4ba055' },
+];
+
 function drawGrass(px, py, gx, gy) {
-  ctx.fillStyle = '#3d7a3d';
+  const v = GRASS_VARS[Math.floor(drand(gx * 73 + gy * 53) * GRASS_VARS.length)];
+  ctx.fillStyle = v.base;
   ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-  ctx.fillStyle = '#4a9e4a';
+
+  // Grass blades
+  ctx.fillStyle = v.blade;
   for (let i = 0; i < 4; i++) {
     const bx = Math.floor(drand(gx * 31 + gy * 17 + i * 7) * (TILE_SIZE - 4));
     const by = Math.floor(drand(gx * 11 + gy * 37 + i * 13) * (TILE_SIZE - 6));
     ctx.fillRect(px + bx, py + by, 2, drand(gx + gy + i) > 0.5 ? 5 : 3);
   }
+
+  // Tiny pebble (≈10% of tiles, deterministic per position)
+  if (drand(gx * 101 + gy * 67 + 999) < 0.10) {
+    const rx = px + 4 + Math.floor(drand(gx * 41 + gy * 23) * (TILE_SIZE - 8));
+    const ry = py + 4 + Math.floor(drand(gx * 19 + gy * 83) * (TILE_SIZE - 8));
+    ctx.fillStyle = '#7a6b5a';
+    ctx.beginPath(); ctx.ellipse(rx, ry, 3, 2, drand(gx * 7) * Math.PI, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#9a8a7a';
+    ctx.beginPath(); ctx.ellipse(rx - 1, ry - 1, 2, 1, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Tiny grass clump (≈8% of tiles, independent roll)
+  if (drand(gx * 61 + gy * 89 + 777) < 0.08) {
+    const cx2 = px + 6 + Math.floor(drand(gx * 29 + gy * 43) * (TILE_SIZE - 12));
+    const cy2 = py + 6 + Math.floor(drand(gx * 47 + gy * 31) * (TILE_SIZE - 12));
+    ctx.strokeStyle = '#2d6b2d';
+    ctx.lineWidth = 1;
+    for (let j = 0; j < 3; j++) {
+      ctx.beginPath();
+      ctx.moveTo(cx2 + j * 3 - 3, cy2 + 4);
+      ctx.lineTo(cx2 + j * 3 - 3 + (drand(gx + j) - 0.5) * 3, cy2 - 3 + drand(gy + j) * 2);
+      ctx.stroke();
+    }
+  }
 }
 
 function drawFence(px, py) {
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(px + 3, py + 3, TILE_SIZE, TILE_SIZE);
   ctx.fillStyle = '#7B4F2E';
   ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
   ctx.fillStyle = '#9B6B3A';
@@ -1358,21 +1398,37 @@ function drawFence(px, py) {
   ctx.strokeRect(px + 1, py + 1, TILE_SIZE - 2, TILE_SIZE - 2);
 }
 
-function drawPath(px, py) {
+function drawPath(px, py, gx, gy) {
+  // Auto-tile: check which of the 4 neighbours are also path/entrance
+  const _p = (x, y) => x >= 0 && x < GRID_W && y >= 0 && y < GRID_H &&
+    (gs.grid[y][x] === TILE.PATH || gs.grid[y][x] === TILE.ENTRANCE);
+  const cN = _p(gx, gy - 1), cS = _p(gx, gy + 1),
+        cW = _p(gx - 1, gy), cE = _p(gx + 1, gy);
+
+  // Base gravel fill
   ctx.fillStyle = '#C8A96E';
   ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+  // Stone texture dots
   ctx.fillStyle = '#B89658';
   for (let row = 0; row < 3; row++)
     for (let col = 0; col < 4; col++)
       ctx.fillRect(px + 4 + col * 7, py + 4 + row * 10, 4, 4);
-  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-  ctx.lineWidth = 0.5;
-  ctx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+
+  // Raised kerb edges on unconnected sides
+  const CURB = '#8B6940', C = 3;
+  ctx.fillStyle = CURB;
+  if (!cN) ctx.fillRect(px,                    py,                    TILE_SIZE, C);
+  if (!cS) ctx.fillRect(px,                    py + TILE_SIZE - C,    TILE_SIZE, C);
+  if (!cW) ctx.fillRect(px,                    py,                    C, TILE_SIZE);
+  if (!cE) ctx.fillRect(px + TILE_SIZE - C,    py,                    C, TILE_SIZE);
 }
 
 function drawWater(px, py, gx, gy) {
   ctx.fillStyle = '#1a6fd4';
   ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+  // Animated waves
   const t   = Date.now() / 900;
   const off = Math.sin(t + gx * 0.9) * 3;
   ctx.strokeStyle = 'rgba(120,210,255,0.5)';
@@ -1385,6 +1441,15 @@ function drawWater(px, py, gx, gy) {
   ctx.moveTo(px + 3,  py + 20 - off);
   ctx.bezierCurveTo(px + 10, py + 16 - off, px + 20, py + 24 - off, px + 29, py + 20 - off);
   ctx.stroke();
+
+  // Occasional sparkle dot
+  const sparkPhase = (t * 1.7 + gx * 3.1 + gy * 2.3) % (Math.PI * 2);
+  if (sparkPhase < 0.4) {
+    const sx = px + 6 + Math.floor(drand(gx * 7 + gy * 13) * (TILE_SIZE - 12));
+    const sy = py + 4 + Math.floor(drand(gx * 11 + gy * 7)  * (TILE_SIZE - 8));
+    ctx.fillStyle = `rgba(200,240,255,${0.5 + Math.sin(sparkPhase * 8) * 0.3})`;
+    ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 function drawEntrance(px, py) {
@@ -1424,6 +1489,9 @@ function drawTree(px, py, gx, gy) {
   // Base: dark green ground
   ctx.fillStyle = '#388e3c';
   ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+  // Ground shadow cast by canopy
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(px + TILE_SIZE/2 + 3, py + 24, 10, 5, 0, 0, Math.PI*2); ctx.fill();
   // Trunk
   ctx.fillStyle = '#6D4C41';
   ctx.fillRect(px + TILE_SIZE/2 - 3, py + 18, 6, 12);
@@ -1446,6 +1514,9 @@ function drawLargeBuildings() {
     const bw = lb.w * TILE_SIZE;
     const bh = lb.h * TILE_SIZE;
 
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(px + 6, py + 6, bw, bh);
     // Walls
     ctx.fillStyle = def.color;
     ctx.fillRect(px, py + bh * 0.35, bw, bh * 0.65);
@@ -1484,6 +1555,9 @@ function drawLargeBuildings() {
 }
 
 function drawBuilding(px, py, emoji, bgColor, accentColor) {
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.fillRect(px + 4, py + 4, TILE_SIZE, TILE_SIZE);
   // Roof
   ctx.fillStyle = bgColor;
   ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
@@ -1562,14 +1636,19 @@ function drawHoverHighlight() {
 
 // ── Animals ──────────────────────────────────────────────────────
 function drawAnimals() {
+  const now = Date.now();
   for (const a of gs.animals) {
-    const { x, y, def, escaped, rampageTimer, currentMeme, memeShowTimer } = a;
+    const { x, def, escaped, rampageTimer, currentMeme, memeShowTimer } = a;
     const r = def.radius;
+    // Idle bounce: gentle sine offset; rampaging animals vibrate faster
+    const freq = rampageTimer > 0 ? 14 : 3.5;
+    const amp  = rampageTimer > 0 ? 2.5 : 1.5;
+    const y = a.y + Math.sin(now / (1000 / freq) + a.id * 10) * amp;
 
-    // Shadow
+    // Shadow (stays on ground, not affected by bounce)
     ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.beginPath();
-    ctx.ellipse(x + 2, y + r - 1, r * 0.85, r * 0.3, 0, 0, Math.PI * 2);
+    ctx.ellipse(a.x + 2, a.y + r - 1, r * 0.85, r * 0.3, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Body
@@ -1982,6 +2061,13 @@ function init() {
 
   // Start the render loop — appState is 'menu' so only drawMenuBackground fires
   requestAnimationFrame(ts => { lastTs = ts; gameLoop(ts); });
+
+  // Attach tooltip titles to all tool buttons from TOOL_HINTS
+  document.querySelectorAll('.tool-btn[id^="btn-"]').forEach(btn => {
+    const toolKey = btn.id.replace('btn-', '');
+    const hint = TOOL_HINTS[toolKey];
+    if (hint) btn.title = hint;
+  });
 
   console.log('🦁 Crazy-ASS Zoologists v2 loaded. Press Start to play!');
   console.log('Shortcuts: F=Fence P=Path W=Water 1-9=Animals R=Restaurant I=IceCream G=GiftShop N=SnackStand WASD=Pan');
