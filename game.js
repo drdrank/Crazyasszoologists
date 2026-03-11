@@ -308,6 +308,7 @@ function createGameState() {
   return {
     money: 500,
     totalEarned: 0,
+    runId: crypto.randomUUID(), // unique ID per game session — used by leaderboard
     buildingCount: 0,
     selectedTool: null,
     grid: [],
@@ -636,6 +637,15 @@ function togglePause() {
 
 function newGame() {
   SFX.click();
+  // Offer score submission if a real game session is in progress
+  if ((appState === 'playing' || appState === 'paused') && gs.totalEarned > 0) {
+    ScoreModal.offer('newgame');
+    return;
+  }
+  _startGameFinal();
+}
+
+function _startGameFinal() {
   if (appState === 'paused') document.getElementById('pause-overlay').classList.add('hidden');
   document.getElementById('canvas-wrap').classList.remove('is-paused');
   gs.selectedTool = null;
@@ -645,6 +655,15 @@ function newGame() {
 
 function exitToMenu() {
   SFX.click();
+  // Offer score submission if a real game session is in progress
+  if ((appState === 'playing' || appState === 'paused') && gs.totalEarned > 0) {
+    ScoreModal.offer('menu');
+    return;
+  }
+  _exitToMenuFinal();
+}
+
+function _exitToMenuFinal() {
   appState = 'menu';
   SFX.stopMusic();
   document.getElementById('main-menu').classList.remove('hidden');
@@ -653,7 +672,6 @@ function exitToMenu() {
   document.getElementById('btn-pause').textContent = '⏸';
   gs.selectedTool = null;
   refreshToolButtons();
-  // Hide any event popup
   document.getElementById('event-popup').classList.add('hidden');
   document.getElementById('event-ticker').textContent = '';
 }
@@ -1138,6 +1156,81 @@ function updateUI() {
 }
 
 function spend(amount) { gs.money -= amount; updateUI(); }
+
+// ================================================================
+//  SCORE COMPUTATION
+// ================================================================
+// Composite score: money earned + level bonus + beauty bonus
+function computeScore() {
+  return Math.floor(gs.totalEarned)
+    + (gs.level  * 1000)
+    + (gs.beauty * 10);
+}
+
+// ================================================================
+//  SCORE MODAL BRIDGE
+//  The only interface between game.js and wallet/leaderboard modules.
+//  leaderboard.js calls ScoreModal.getPayload() — it never touches gs directly.
+// ================================================================
+const ScoreModal = {
+  _intent: null,  // 'menu' | 'newgame'
+
+  offer(intent) {
+    this._intent = intent;
+    const score = computeScore();
+    const overlay = document.getElementById('score-overlay');
+    if (!overlay) { this._proceed(); return; }
+
+    // Populate score summary line
+    const summaryEl = document.getElementById('score-summary');
+    if (summaryEl) {
+      summaryEl.innerHTML =
+        `<strong style="color:#ffd700">$${score.toLocaleString()}</strong>` +
+        ` &nbsp;·&nbsp; Lv${gs.level}` +
+        ` &nbsp;·&nbsp; ${gs.animals.length} animals`;
+    }
+
+    // Clear previous errors / reset submit button
+    const errEl = document.getElementById('submit-error');
+    if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+    const btn = document.getElementById('btn-submit-score');
+    if (btn) { btn.disabled = !window.WalletAPI?.isConnected(); btn.textContent = '📤 Submit Score'; }
+
+    overlay.classList.remove('hidden');
+
+    // Kick off top-10 load in the background
+    if (window.LeaderboardAPI) LeaderboardAPI.loadTop10();
+  },
+
+  skip() {
+    document.getElementById('score-overlay')?.classList.add('hidden');
+    this._proceed();
+  },
+
+  complete() {
+    document.getElementById('score-overlay')?.classList.add('hidden');
+    this._proceed();
+  },
+
+  _proceed() {
+    if (this._intent === 'menu')    _exitToMenuFinal();
+    if (this._intent === 'newgame') _startGameFinal();
+    this._intent = null;
+  },
+
+  // Snapshot of the current game state for leaderboard submission.
+  // Called by leaderboard.js — never let external modules read gs directly.
+  getPayload() {
+    return {
+      runId:       gs.runId,
+      score:       computeScore(),
+      totalEarned: Math.floor(gs.totalEarned),
+      level:       gs.level,
+      beauty:      gs.beauty,
+      animals:     gs.animals.length,
+    };
+  },
+};
 
 // ================================================================
 //  RENDERING

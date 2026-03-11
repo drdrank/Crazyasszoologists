@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Crazy-ASS Zoologists: NFT Zoo Tycoon</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- Supabase JS (UMD — exposes window.supabase) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- Pera Wallet Connect (ESM — assigns window.PeraWalletConnect after load) -->
+  <script type="module">
+    import { PeraWalletConnect }
+      from 'https://cdn.jsdelivr.net/npm/@perawallet/connect@1/+esm';
+    window.PeraWalletConnect = PeraWalletConnect;
+  </script>
 </head>
 <body>
   <div id="app">
@@ -21,6 +29,15 @@
         <div class="menu-buttons">
           <button class="menu-btn primary" onclick="startGame()">🎮 Start Game</button>
         </div>
+
+        <!-- Wallet connect area in main menu -->
+        <div class="menu-wallet-area">
+          <button class="menu-btn" id="menu-btn-connect" onclick="WalletAPI.connect()">
+            🔗 Connect Pera Wallet
+          </button>
+          <div id="menu-wallet-info" class="menu-wallet-info" style="display:none"></div>
+        </div>
+
         <div class="menu-footer">
           Arrow keys / WASD to pan camera &nbsp;·&nbsp; ESC to deselect tool<br>
           Right-click drag to pan &nbsp;·&nbsp; Shortcuts: F P W 1–9
@@ -45,6 +62,120 @@
     </div>
 
     <!-- ═══════════════════════════════════════════
+         SCORE SUBMISSION OVERLAY
+         Shown when player clicks New Game or Exit while playing
+    ════════════════════════════════════════════ -->
+    <div id="score-overlay" class="fullscreen-overlay hidden">
+      <div class="menu-card score-card">
+        <div class="menu-logo">🏆</div>
+        <h2 class="menu-title" style="font-size:24px">Session Complete!</h2>
+        <p class="menu-subtitle" id="score-summary">Score: $0</p>
+
+        <!-- How it works explainer -->
+        <div class="howto-box">
+          <strong>How it works:</strong>
+          <ul>
+            <li>Connect your Pera Wallet</li>
+            <li>The game checks whether you hold supported NFT animals</li>
+            <li>Your NFTs can unlock special zoo animals in-game</li>
+            <li>Submit your score to compete on the global leaderboard</li>
+            <li>NFT holders get their own dedicated Holders leaderboard</li>
+          </ul>
+        </div>
+
+        <!-- Wallet status + connect/disconnect -->
+        <div class="wallet-row">
+          <div id="overlay-wallet-status" class="wallet-status">No wallet connected</div>
+          <div class="wallet-btns">
+            <button class="menu-btn primary wallet-btn" id="overlay-btn-connect"
+                    onclick="WalletAPI.connect()">🔗 Connect Pera Wallet</button>
+            <button class="menu-btn wallet-btn" id="overlay-btn-disconnect"
+                    style="display:none" onclick="WalletAPI.disconnect()">🔌 Disconnect</button>
+          </div>
+        </div>
+
+        <!-- Submit section — shown only when wallet is connected -->
+        <div id="score-submit-section" style="display:none">
+          <input id="score-name" class="score-name-input" type="text"
+                 maxlength="20" placeholder="Display name (optional, max 20 chars)" />
+          <div id="submit-error" class="submit-error" style="display:none"></div>
+          <button class="menu-btn primary" id="btn-submit-score" disabled
+                  onclick="LeaderboardAPI.submit()">📤 Submit Score to Leaderboard</button>
+        </div>
+
+        <!-- Connect prompt — shown when wallet is NOT connected -->
+        <div id="score-connect-prompt" class="connect-prompt">
+          Connect your wallet to submit scores and compete with other holders.
+        </div>
+
+        <!-- Inline top-10 preview -->
+        <div class="leaderboard-preview">
+          <div class="lb-preview-title">🏆 Current Top 10</div>
+          <table class="lb-table compact">
+            <thead><tr><th>#</th><th>Name</th><th>Lv</th><th>Score</th></tr></thead>
+            <tbody id="leaderboard-preview-body">
+              <tr><td colspan="4" style="text-align:center;padding:6px">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="menu-buttons" style="margin-top:12px">
+          <button class="menu-btn" onclick="ScoreModal.skip()">⏭ Skip / Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         FULL LEADERBOARD MODAL
+         Shown from the 🏆 button in the top bar
+    ════════════════════════════════════════════ -->
+    <div id="leaderboard-modal" class="fullscreen-overlay hidden">
+      <div class="menu-card lb-modal-card">
+        <div class="lb-modal-header">
+          <h2 class="menu-title" style="font-size:22px;margin:0">🏆 Global Leaderboard</h2>
+          <button class="ctrl-btn close-btn" onclick="LeaderboardAPI.hideBoard()">✕ Close</button>
+        </div>
+
+        <!-- Personal best -->
+        <div class="my-best-row">
+          <span class="my-best-label">My best:</span>
+          <span id="my-best-score">—</span>
+        </div>
+
+        <!-- Tab filters -->
+        <div class="lb-tabs">
+          <button class="lb-tab active" id="tab-global"
+                  onclick="switchLBTab('global')">🌍 Global Top 25</button>
+          <button class="lb-tab" id="tab-holders"
+                  onclick="switchLBTab('holders')">🏆 Holders Only</button>
+        </div>
+
+        <!-- Leaderboard table -->
+        <div class="lb-table-wrap">
+          <table class="lb-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Wallet</th>
+                <th>Lv</th>
+                <th>Score</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-modal-body">
+              <tr><td colspan="6" style="text-align:center;padding:16px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="text-align:center;margin-top:12px">
+          <button class="menu-btn" onclick="LeaderboardAPI.hideBoard()">✕ Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
          TOP HUD BAR
     ════════════════════════════════════════════ -->
     <header id="top-bar">
@@ -54,11 +185,14 @@
         <span id="money-display">💰 $500</span>
         <span id="visitor-display">👥 0</span>
         <span id="income-display">📈 $0/s</span>
+        <span id="wallet-status" class="wallet-status">🔌 No wallet</span>
         <span id="event-ticker"></span>
       </div>
 
       <div id="game-controls">
-        <button class="ctrl-btn" id="btn-undo"        onclick="undo()"        title="Undo last action [Z]" disabled>↩ Undo</button>
+        <button class="ctrl-btn" id="btn-leaderboard"      onclick="LeaderboardAPI.showBoard()"    title="View Leaderboard">🏆</button>
+        <button class="ctrl-btn" id="btn-disconnect-wallet" onclick="WalletAPI.disconnect()"       title="Disconnect wallet" style="display:none">🔌</button>
+        <button class="ctrl-btn" id="btn-undo"              onclick="undo()"                       title="Undo last action [Z]" disabled>↩ Undo</button>
         <button class="ctrl-btn" id="btn-sound-sfx"   onclick="toggleSFX()"   title="Toggle sound effects">🔊</button>
         <button class="ctrl-btn" id="btn-sound-music" onclick="toggleMusic()" title="Toggle music">🎵</button>
         <button class="ctrl-btn" id="btn-pause"       onclick="togglePause()" title="Pause / Resume">⏸</button>
@@ -219,5 +353,7 @@
   </div><!-- end app -->
 
   <script src="game.js"></script>
+  <script src="wallet.js"></script>
+  <script src="leaderboard.js"></script>
 </body>
 </html>
