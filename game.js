@@ -549,6 +549,15 @@ function centerCamera() {
   clampCamera();
 }
 
+// Rotate by 45° steps (dir: -1 = CCW, 1 = CW)
+function rotateCamera(dir) {
+  camera.angle += dir * (Math.PI / 4);
+}
+
+function resetRotation() {
+  camera.angle = 0;
+}
+
 // ================================================================
 //  GRID INITIALISATION  (40 × 30)
 // ================================================================

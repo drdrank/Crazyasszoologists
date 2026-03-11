@@ -335,8 +335,13 @@
               <button class="cam-btn" onclick="nudgeCamera(1,0)">▶</button>
             </div>
             <button class="cam-btn" onclick="nudgeCamera(0,1)">▼</button>
+            <div class="cam-row" style="margin-top:4px">
+              <button class="cam-btn" onclick="rotateCamera(-1)" title="Rotate left [Q]">↺</button>
+              <button class="cam-btn" onclick="resetRotation()"  title="Reset rotation">↕</button>
+              <button class="cam-btn" onclick="rotateCamera(1)"  title="Rotate right [E]">↻</button>
+            </div>
           </div>
-          <div class="hint-esc">WASD / arrow keys to pan</div>
+          <div class="hint-esc">WASD / arrow keys to pan &nbsp;·&nbsp; Q/E to rotate</div>
         </div>
 
       </aside>
