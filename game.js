@@ -11,10 +11,10 @@
 
 // ── Constants ────────────────────────────────────────────────────
 const TILE_SIZE  = 32;
-const GRID_W     = 40;
-const GRID_H     = 30;
-const WORLD_W    = GRID_W * TILE_SIZE; // 1280
-const WORLD_H    = GRID_H * TILE_SIZE; //  960
+const GRID_W     = 120;
+const GRID_H     = 80;
+const WORLD_W    = GRID_W * TILE_SIZE; // 3840
+const WORLD_H    = GRID_H * TILE_SIZE; // 2560
 
 // Tile type IDs
 const TILE = {
@@ -207,11 +207,14 @@ const TOOL_HINTS = {
 // ── Level progression ────────────────────────────────────────────
 // xpToNext: XP needed to reach this level FROM the previous one
 const LEVEL_DEFS = [
-  { level: 1, xpToNext: 80,  unlockedCols: 20, label: 'Zoo Apprentice',   unlocks: '' },
-  { level: 2, xpToNext: 200, unlockedCols: 25, label: 'Junior Keeper',    unlocks: 'Glass House & Reptile House unlocked!' },
-  { level: 3, xpToNext: 450, unlockedCols: 30, label: 'Zoo Manager',      unlocks: 'Aquarium unlocked! Map expanded!' },
-  { level: 4, xpToNext: 900, unlockedCols: 35, label: 'Zoo Director',     unlocks: 'All exotics & mega animals unlocked! Map expanded!' },
-  { level: 5, xpToNext: 99999, unlockedCols: 40, label: 'Legendary Zoologist', unlocks: 'Full map unlocked! You win!' },
+  { level: 1, xpToNext: 100,   unlockedCols: 20,  label: 'Zoo Apprentice',      unlocks: '' },
+  { level: 2, xpToNext: 300,   unlockedCols: 35,  label: 'Junior Keeper',       unlocks: 'Glass House & Reptile House unlocked!' },
+  { level: 3, xpToNext: 700,   unlockedCols: 50,  label: 'Zoo Manager',         unlocks: 'Aquarium unlocked! Map expanded!' },
+  { level: 4, xpToNext: 1500,  unlockedCols: 65,  label: 'Zoo Director',        unlocks: 'All exotics & mega animals unlocked! Map expanded!' },
+  { level: 5, xpToNext: 3000,  unlockedCols: 80,  label: 'Senior Zoologist',    unlocks: 'Vast new territory unlocked!' },
+  { level: 6, xpToNext: 6000,  unlockedCols: 100, label: 'Zoo Legend',          unlocks: 'Legendary territory unlocked!' },
+  { level: 7, xpToNext: 12000, unlockedCols: 110, label: 'Master Zoologist',    unlocks: 'Mega expansion! Almost there…' },
+  { level: 8, xpToNext: 99999, unlockedCols: 120, label: 'Legendary Zoologist', unlocks: 'Full map unlocked! You built the greatest zoo on Earth!' },
 ];
 
 // ── Random events pool ───────────────────────────────────────────
@@ -566,8 +569,8 @@ function initGrid() {
   for (let y = 0; y < GRID_H; y++) {
     gs.grid[y] = new Array(GRID_W).fill(TILE.GRASS);
   }
-  // Zoo starts empty — just the entrance tile at left edge, row 15
-  gs.grid[15][0] = TILE.ENTRANCE;
+  // Zoo starts empty — just the entrance tile at left edge, vertical centre
+  gs.grid[Math.floor(GRID_H / 2)][0] = TILE.ENTRANCE;
 }
 
 // ── Animal factory helper ────────────────────────────────────────
@@ -598,9 +601,9 @@ function startGame() {
   gs = createGameState();
   initGrid();
 
-  // Start with camera centred on the entrance (col 0, row 15)
+  // Start with camera centred on the entrance (col 0, vertical centre)
   camera.x = 0;
-  camera.y = Math.max(0, TILE_SIZE * 15 - canvas.height / 2);
+  camera.y = Math.max(0, TILE_SIZE * Math.floor(GRID_H / 2) - canvas.height / 2);
   clampCamera();
 
   appState = 'playing';
@@ -816,10 +819,10 @@ function placeAnimal(gx, gy, type) {
 //  VISITOR SPAWNING
 // ================================================================
 function spawnVisitor() {
-  if (gs.visitors.length >= 50) return;
+  if (gs.visitors.length >= 150) return;
 
   // Find the entrance tile
-  let ex = 0, ey = 15;
+  let ex = 0, ey = Math.floor(GRID_H / 2);
   outer: for (let y = 0; y < GRID_H; y++)
     for (let x = 0; x < GRID_W; x++)
       if (gs.grid[y][x] === TILE.ENTRANCE) { ex = x; ey = y; break outer; }
