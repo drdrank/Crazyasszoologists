@@ -51,14 +51,13 @@ window.WalletAPI = (() => {
     if (_peraClient) return _peraClient;
 
     if (!window.PeraWalletConnect) {
-      throw new Error(
-        'Pera Wallet SDK not loaded — make sure pera-wallet.js is in the same folder as index.html.'
-      );
+      const detail = window._peraLoadError
+        ? `Bundle error: ${window._peraLoadError}`
+        : 'pera-wallet.js did not assign window.PeraWalletConnect';
+      throw new Error(detail);
     }
 
-    // Note: v1.x uses WalletConnect v1 bridge (Pera's own relay, not the deprecated public one)
     _peraClient = new window.PeraWalletConnect();
-
     _peraClient.connector?.on?.('disconnect', _handleDisconnect);
     return _peraClient;
   }
