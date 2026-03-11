@@ -1,62 +1,98 @@
 'use strict';
 // ================================================================
-//  WALLET MODULE  —  Pera Wallet (Algorand) + NFT detection
+//  WALLET MODULE  —  Pera Wallet v2 (WalletConnect v2)
 //  Exposes: window.WalletAPI
 //
-//  HOW TO SET UP:
-//  1. No credentials needed for basic wallet connection
-//  2. Fill in SUPPORTED_ASSET_IDS to enable NFT holder detection
-//  3. Fill in ASSET_TO_ANIMAL to unlock animals from NFT ownership
+//  SETUP CHECKLIST:
+//  1. Get a free WalletConnect Project ID:
+//       https://cloud.walletconnect.com  → New Project → copy Project ID
+//  2. Paste it into WALLETCONNECT_PROJECT_ID below
+//  3. (Optional) Add your NFT asset IDs to SUPPORTED_ASSET_IDS
+//  4. (Optional) Map asset IDs to animals in ASSET_TO_ANIMAL
 // ================================================================
 
 // ──────────────────────────────────────────────────────────────────
-//  CONFIG  —  Edit these for your Crazy-ASS Zoologists collection
+//  CONFIG
 // ──────────────────────────────────────────────────────────────────
 
-// TODO: Add your NFT collection's Algorand Standard Asset (ASA) IDs here
-// Example: const SUPPORTED_ASSET_IDS = [123456789, 987654321];
-const SUPPORTED_ASSET_IDS = [
-  // 123456789,   // example NFT asset ID
-];
+// TODO: paste your WalletConnect Project ID here
+// Get one free at https://cloud.walletconnect.com → New Project
+const WALLETCONNECT_PROJECT_ID = 'YOUR_WALLETCONNECT_PROJECT_ID';
 
-// TODO: Map specific ASA IDs to in-game animal keys
-// When a player holds this asset, that animal is highlighted / unlocked
-// Animal keys: 'donkey','mega_donkey','cheetah','lion','tiger','elephant',
-//              'giraffe','zebra','monkey','panda','penguin','crocodile',
-//              'flamingo','butterfly','spider','snake','fish','dolphin','shark'
-const ASSET_TO_ANIMAL = {
-  // 123456789: 'lion',
-  // 987654321: 'shark',
-};
+// TODO: add your Crazy-ASS Zoologists NFT asset IDs (Algorand ASA IDs)
+// Example: [123456789, 987654321]
+const SUPPORTED_ASSET_IDS = [];
 
-// Free public Algorand indexer — no API key required
-// Use 'https://testnet-idx.algonode.cloud' for testnet during development
+// TODO: map ASA IDs to in-game animal keys to unlock them for holders
+// Example: { 123456789: 'lion', 987654321: 'shark' }
+const ASSET_TO_ANIMAL = {};
+
+// Free public Algorand indexer (no API key required)
+// Switch to 'https://testnet-idx.algonode.cloud' during development
 const ALGO_INDEXER = 'https://mainnet-idx.algonode.cloud';
+
+// ──────────────────────────────────────────────────────────────────
+//  SDK READINESS
+//  The Pera ESM module script fires 'peraSDKReady' when done.
+//  We queue connect() calls until that event fires.
+// ──────────────────────────────────────────────────────────────────
+let _sdkReady   = false;
+let _sdkPromise = new Promise(resolve => {
+  // If the SDK already loaded before this script ran, resolve immediately
+  if (window.PeraWalletConnect) {
+    _sdkReady = true;
+    resolve();
+    return;
+  }
+  window.addEventListener('peraSDKReady', () => {
+    _sdkReady = true;
+    resolve();
+  }, { once: true });
+});
 
 // ──────────────────────────────────────────────────────────────────
 //  MODULE  (IIFE — private state, exposed via window.WalletAPI)
 // ──────────────────────────────────────────────────────────────────
 window.WalletAPI = (() => {
-  let _peraClient  = null;   // PeraWalletConnect instance (lazy)
-  let _address     = null;   // connected wallet address string or null
-  let _assets      = [];     // raw Algorand asset list from indexer
-  let _reconnected = false;  // prevents double-reconnect on page load
+  let _peraClient  = null;
+  let _address     = null;
+  let _assets      = [];
+  let _reconnected = false;
 
-  // ── Get (or create) Pera client ─────────────────────────────────
-  // PeraWalletConnect is assigned to window by the <script type="module">
-  // in index.html. Reading it lazily here means it's always ready by the
-  // time a user clicks "Connect Wallet".
-  function _getClient() {
+  // ── Create Pera client (called once after SDK is ready) ──────────
+  function _createClient() {
     if (_peraClient) return _peraClient;
+
     if (!window.PeraWalletConnect) {
       throw new Error(
-        'Pera Wallet SDK not loaded. ' +
-        'Check the <script type="module"> tag in index.html.'
+        window._peraSDKError
+          ? `Pera SDK failed to load: ${window._peraSDKError}`
+          : 'Pera SDK not ready yet — try again in a moment.'
       );
     }
-    _peraClient = new window.PeraWalletConnect();
-    // Handle wallet-initiated disconnects (e.g. user removes session in Pera app)
-    _peraClient.connector?.on('disconnect', _handleDisconnect);
+
+    if (WALLETCONNECT_PROJECT_ID === 'YOUR_WALLETCONNECT_PROJECT_ID') {
+      throw new Error(
+        'Missing WalletConnect Project ID.\n' +
+        'Get a free one at cloud.walletconnect.com and paste it\n' +
+        'into WALLETCONNECT_PROJECT_ID in wallet.js.'
+      );
+    }
+
+    _peraClient = new window.PeraWalletConnect({
+      projectId: WALLETCONNECT_PROJECT_ID,
+      // Metadata shown inside the Pera Wallet app during connection
+      metadata: {
+        name:        'Crazy-ASS Zoologists',
+        description: 'NFT Zoo Tycoon',
+        url:         window.location.origin,
+        icons:       ['https://drdrank.github.io/Crazyasszoologists/favicon.ico'],
+      },
+    });
+
+    // v2 disconnect event
+    _peraClient.connector?.on?.('disconnect', _handleDisconnect);
+
     return _peraClient;
   }
 
@@ -64,16 +100,25 @@ window.WalletAPI = (() => {
   async function connect() {
     _updateUI('connecting');
     try {
-      const client   = _getClient();
+      // Wait for the ESM module to finish loading (usually instant after page load)
+      await _sdkPromise;
+      const client   = _createClient();
       const accounts = await client.connect();
       if (accounts && accounts.length > 0) {
         await _onConnected(accounts[0]);
+      } else {
+        _updateUI('disconnected');
       }
     } catch (err) {
-      // 'CONNECT_MODAL_CLOSED' = user cancelled — not an error worth alerting
-      if (err?.data?.type !== 'CONNECT_MODAL_CLOSED') {
+      // User closed the QR modal — not an error worth showing
+      const cancelled =
+        err?.data?.type === 'CONNECT_MODAL_CLOSED' ||
+        err?.message?.includes('closed') ||
+        err?.message?.includes('cancelled');
+
+      if (!cancelled) {
         console.error('[WalletAPI] connect error:', err);
-        alert('Wallet connection failed.\nMake sure Pera Wallet is installed and try again.');
+        alert(`Wallet connection failed:\n${err.message}`);
       }
       _updateUI('disconnected');
     }
@@ -85,7 +130,7 @@ window.WalletAPI = (() => {
     _handleDisconnect();
   }
 
-  // ── Internal: after a successful connection ──────────────────────
+  // ── Internal: after successful connection ────────────────────────
   async function _onConnected(address) {
     _address = address;
     _assets  = await _fetchAssets(address);
@@ -100,12 +145,14 @@ window.WalletAPI = (() => {
     _updateUI('disconnected');
   }
 
-  // ── Auto-reconnect existing Pera session on page load ───────────
+  // ── Try to restore an existing Pera session on page load ─────────
   async function tryReconnect() {
     if (_reconnected) return;
     _reconnected = true;
     try {
-      const client   = _getClient();
+      await _sdkPromise;
+      if (window._peraSDKError) return; // SDK failed — skip silently
+      const client   = _createClient();
       const accounts = await client.reconnectSession();
       if (accounts && accounts.length > 0) {
         await _onConnected(accounts[0]);
@@ -113,12 +160,10 @@ window.WalletAPI = (() => {
     } catch {} // no prior session — silently ignore
   }
 
-  // ── Fetch assets from public Algorand indexer ────────────────────
+  // ── Fetch wallet assets from the free Algorand indexer ───────────
   async function _fetchAssets(address) {
     try {
-      const res = await fetch(
-        `${ALGO_INDEXER}/v2/accounts/${address}?include-all=false`
-      );
+      const res  = await fetch(`${ALGO_INDEXER}/v2/accounts/${address}?include-all=false`);
       if (!res.ok) return [];
       const data = await res.json();
       return data.account?.assets || [];
@@ -142,33 +187,33 @@ window.WalletAPI = (() => {
       .map(([, animal]) => animal);
   }
 
-  // ── Highlight NFT-unlocked animal buttons in the sidebar ─────────
+  // ── Highlight NFT-unlocked animal buttons in the game sidebar ────
   function _applyNFTUnlocks() {
-    getUnlockedAnimals().forEach(animalKey => {
-      const btn = document.getElementById(`btn-${animalKey}`);
+    getUnlockedAnimals().forEach(key => {
+      const btn = document.getElementById(`btn-${key}`);
       if (btn) {
         btn.style.borderColor = '#ffd700';
-        btn.setAttribute('title', '🔓 Unlocked by your NFT!');
+        btn.title = '🔓 Unlocked by your NFT!';
       }
     });
   }
 
-  // ── Shorten a long Algorand address ─────────────────────────────
+  // ── Format a long Algorand address to ABCD…WXYZ ─────────────────
   function formatAddress(addr) {
     if (!addr || addr.length < 10) return addr || '—';
     return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
   }
 
   // ── Getters ──────────────────────────────────────────────────────
-  function getAddress() { return _address; }
-  function isConnected() { return !!_address; }
-  function getAssets()   { return _assets; }
+  function getAddress()    { return _address; }
+  function isConnected()   { return !!_address; }
+  function getAssets()     { return _assets; }
 
-  // ── Sync all wallet-related UI elements ──────────────────────────
+  // ── Sync every wallet-related DOM element ────────────────────────
   function _updateUI(state) {
     const connected = (state === 'connected');
 
-    // ── Top bar: wallet status badge ────────────────────────────────
+    // Top bar status badge
     const statusEl = document.getElementById('wallet-status');
     if (statusEl) {
       if (state === 'connected') {
@@ -183,22 +228,22 @@ window.WalletAPI = (() => {
       }
     }
 
-    // ── Top bar: disconnect button ───────────────────────────────────
+    // Top bar disconnect button
     const discBtn = document.getElementById('btn-disconnect-wallet');
     if (discBtn) discBtn.style.display = connected ? 'inline-flex' : 'none';
 
-    // ── Main menu: connect / info ────────────────────────────────────
-    const menuConnBtn  = document.getElementById('menu-btn-connect');
-    const menuInfoEl   = document.getElementById('menu-wallet-info');
-    if (menuConnBtn) menuConnBtn.style.display = connected ? 'none'  : 'block';
-    if (menuInfoEl)  {
-      menuInfoEl.style.display = connected ? 'block' : 'none';
-      menuInfoEl.textContent   = connected
+    // Main menu
+    const menuConn = document.getElementById('menu-btn-connect');
+    const menuInfo = document.getElementById('menu-wallet-info');
+    if (menuConn) menuConn.style.display = connected ? 'none'  : 'block';
+    if (menuInfo) {
+      menuInfo.style.display = connected ? 'block' : 'none';
+      menuInfo.textContent   = connected
         ? `✅ ${formatAddress(_address)}${isSupportedHolder() ? '  ·  🏆 Holder' : ''}`
         : '';
     }
 
-    // ── Score overlay: wallet status line ────────────────────────────
+    // Score overlay
     const overlayStatus = document.getElementById('overlay-wallet-status');
     if (overlayStatus) {
       overlayStatus.innerHTML = connected
@@ -207,19 +252,17 @@ window.WalletAPI = (() => {
         : 'No wallet connected';
     }
 
-    // ── Score overlay: connect / disconnect buttons ──────────────────
-    const oConnBtn = document.getElementById('overlay-btn-connect');
-    const oDiscBtn = document.getElementById('overlay-btn-disconnect');
-    if (oConnBtn) oConnBtn.style.display = connected ? 'none'  : 'inline-block';
-    if (oDiscBtn) oDiscBtn.style.display = connected ? 'inline-block' : 'none';
+    const oConn = document.getElementById('overlay-btn-connect');
+    const oDisc = document.getElementById('overlay-btn-disconnect');
+    if (oConn) oConn.style.display = connected ? 'none'         : 'inline-block';
+    if (oDisc) oDisc.style.display = connected ? 'inline-block' : 'none';
 
-    // ── Score overlay: submit section vs connect prompt ──────────────
-    const submitSection  = document.getElementById('score-submit-section');
-    const connectPrompt  = document.getElementById('score-connect-prompt');
-    if (submitSection)  submitSection.style.display = connected ? 'block' : 'none';
-    if (connectPrompt)  connectPrompt.style.display  = connected ? 'none'  : 'block';
+    const submitSection = document.getElementById('score-submit-section');
+    const connectPrompt = document.getElementById('score-connect-prompt');
+    if (submitSection) submitSection.style.display = connected ? 'block' : 'none';
+    if (connectPrompt) connectPrompt.style.display  = connected ? 'none'  : 'block';
 
-    // ── Submit button enabled state ──────────────────────────────────
+    // Submit button
     const submitBtn = document.getElementById('btn-submit-score');
     if (submitBtn) {
       submitBtn.disabled = !connected;
@@ -242,8 +285,5 @@ window.WalletAPI = (() => {
   };
 })();
 
-// Try to restore a previous Pera session on page load.
-// Small delay lets the <script type="module"> (Pera SDK) finish executing first.
-window.addEventListener('load', () => {
-  setTimeout(() => WalletAPI.tryReconnect(), 600);
-});
+// Try to restore an existing Pera session when the page finishes loading
+window.addEventListener('load', () => WalletAPI.tryReconnect());
