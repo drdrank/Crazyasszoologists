@@ -27,6 +27,20 @@ const SUPPORTED_ASSET_IDS = [];
 // Example: { 123456789: 'lion', 987654321: 'shark' }
 const ASSET_TO_ANIMAL = {};
 
+// ── NFT Collection definitions ────────────────────────────────────
+// Each entry maps a collection key to its list of Algorand ASA IDs.
+// Replace the empty arrays with your real ASA IDs when your NFTs are minted.
+//
+// To find an ASA ID:
+//   - Open the asset on https://explorer.perawallet.app or https://algoexplorer.io
+//   - The number in the URL is the ASA ID
+const NFT_COLLECTIONS = {
+  donkey:      { name: 'Donkey',         asaIds: [] },  // TODO: add Donkey ASA IDs
+  mega_donkey: { name: 'Mega Donkey',    asaIds: [] },  // TODO: add Mega Donkey ASA IDs
+  cheetah:     { name: 'Cheetah',        asaIds: [] },  // TODO: add Cheetah ASA IDs
+  puffin:      { name: 'Poppin Puffins', asaIds: [] },  // TODO: add Puffin ASA IDs
+};
+
 // Free public Algorand indexer (no API key required)
 // Switch to 'https://testnet-idx.algonode.cloud' during development
 const ALGO_INDEXER = 'https://mainnet-idx.algonode.cloud';
@@ -41,10 +55,11 @@ const ALGO_INDEXER = 'https://mainnet-idx.algonode.cloud';
 //  MODULE  (IIFE — private state, exposed via window.WalletAPI)
 // ──────────────────────────────────────────────────────────────────
 window.WalletAPI = (() => {
-  let _peraClient  = null;
-  let _address     = null;
-  let _assets      = [];
-  let _reconnected = false;
+  let _peraClient       = null;
+  let _address          = null;
+  let _assets           = [];
+  let _collectionFlags  = {};   // { donkey: bool, mega_donkey: bool, cheetah: bool, puffin: bool }
+  let _reconnected      = false;
 
   // ── Get or create Pera client ────────────────────────────────────
   function _getClient() {
@@ -95,16 +110,21 @@ window.WalletAPI = (() => {
 
   // ── Internal: after successful connection ────────────────────────
   async function _onConnected(address) {
-    _address = address;
-    _assets  = await _fetchAssets(address);
+    _address          = address;
+    _assets           = await _fetchAssets(address);
+    _collectionFlags  = _detectCollections(_assets);
     _updateUI('connected');
     _applyNFTUnlocks();
-    console.log(`[WalletAPI] Connected: ${address} | ${_assets.length} assets`);
+    // Apply holder perks (holder_perks.js must load before wallet.js)
+    if (window.HolderPerks) HolderPerks.apply(_collectionFlags);
+    console.log(`[WalletAPI] Connected: ${address} | ${_assets.length} assets | flags:`, _collectionFlags);
   }
 
   function _handleDisconnect() {
-    _address = null;
-    _assets  = [];
+    _address         = null;
+    _assets          = [];
+    _collectionFlags = {};
+    if (window.HolderPerks) HolderPerks.apply({});
     _updateUI('disconnected');
   }
 
@@ -134,11 +154,32 @@ window.WalletAPI = (() => {
     }
   }
 
-  // ── NFT detection ────────────────────────────────────────────────
+  // ── NFT / collection detection ────────────────────────────────────
+
+  // Compute which named collections the wallet holds
+  function _detectCollections(assets) {
+    const owned = new Set(assets.map(a => a['asset-id']));
+    const flags = {};
+    for (const [key, col] of Object.entries(NFT_COLLECTIONS)) {
+      flags[key] = col.asaIds.length > 0 && col.asaIds.some(id => owned.has(id));
+    }
+    return flags;
+  }
+
   function isSupportedHolder() {
+    // True if wallet holds at least one asset from any named collection
+    if (Object.values(_collectionFlags).some(Boolean)) return true;
+    // Fallback: check legacy SUPPORTED_ASSET_IDS list
     if (!SUPPORTED_ASSET_IDS.length) return false;
     const owned = new Set(_assets.map(a => a['asset-id']));
     return SUPPORTED_ASSET_IDS.some(id => owned.has(id));
+  }
+
+  function getCollectionFlags() { return { ..._collectionFlags }; }
+
+  // Compact badge string e.g. "🫏🐴🏆" for the status bar / leaderboard
+  function getHolderBadges() {
+    return window.HolderPerks?.badgesForFlags(_collectionFlags) ?? '';
   }
 
   function getUnlockedAnimals() {
@@ -146,6 +187,36 @@ window.WalletAPI = (() => {
     return Object.entries(ASSET_TO_ANIMAL)
       .filter(([id]) => owned.has(Number(id)))
       .map(([, animal]) => animal);
+  }
+
+  // ── Signed message ────────────────────────────────────────────────
+  // Signs a score payload with the connected Pera wallet so a backend
+  // (e.g. a Supabase Edge Function) can verify authenticity.
+  //
+  // BACKEND VERIFICATION (Supabase Edge Function / Node.js):
+  //   import algosdk from 'algosdk';
+  //   const msgBytes  = new TextEncoder().encode(JSON.stringify(payload));
+  //   const sigBytes  = Buffer.from(signature, 'base64');
+  //   const pubKey    = algosdk.decodeAddress(walletAddress).publicKey;
+  //   const valid     = algosdk.verifyBytes(msgBytes, sigBytes, pubKey);
+  //   if (!valid) throw new Error('Invalid signature — score rejected');
+  async function signScorePayload(payload) {
+    if (!_peraClient || !_address) throw new Error('No wallet connected');
+    const msgString = JSON.stringify(payload);
+    const msgBytes  = new TextEncoder().encode(msgString);
+    try {
+      // @perawallet/connect v1.x signData API
+      const signed = await _peraClient.signData(
+        [{ data: msgBytes, message: 'Sign to submit your zoo score to the leaderboard' }],
+        _address
+      );
+      return typeof signed[0] === 'string' ? signed[0] : btoa(String.fromCharCode(...signed[0]));
+    } catch (err) {
+      // User cancelled the signing request
+      if (err?.data?.type === 'SIGN_TRANSACTIONS_CANCELLED') return null;
+      console.warn('[WalletAPI] signData failed (wallet may not support it):', err.message);
+      return null; // non-fatal — score is submitted unsigned
+    }
   }
 
   // ── Highlight NFT-unlocked animal buttons in the game sidebar ────
@@ -240,7 +311,10 @@ window.WalletAPI = (() => {
     isConnected,
     getAssets,
     isSupportedHolder,
+    getCollectionFlags,
+    getHolderBadges,
     getUnlockedAnimals,
+    signScorePayload,
     formatAddress,
     updateUI: _updateUI,
   };

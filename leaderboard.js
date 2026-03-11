@@ -11,44 +11,50 @@
 //
 //  ── SQL (run once in Supabase Dashboard → SQL Editor) ──────────
 /*
+  ── Run this in Supabase Dashboard → SQL Editor ─────────────────
+
   create table if not exists leaderboard_scores (
-    id             bigserial    primary key,
-    run_id         text         not null unique,
-    wallet_address text         not null,
-    display_name   text         not null default 'Anonymous',
-    score          integer      not null check (score >= 0),
-    total_earned   integer      not null default 0,
-    level          smallint     not null default 1,
-    beauty         smallint     not null default 0,
-    animals_count  smallint     not null default 0,
-    nft_holder     boolean      not null default false,
-    created_at     timestamptz  not null default now()
+    id               bigserial    primary key,
+    run_id           text         not null unique,
+    wallet_address   text         not null,
+    display_name     text         not null default 'Anonymous',
+    score            integer      not null check (score >= 0),
+    total_earned     integer      not null default 0,
+    level            smallint     not null default 1,
+    beauty           smallint     not null default 0,
+    animals_count    smallint     not null default 0,
+    nft_holder       boolean      not null default false,
+    -- collection_flags: JSON map of which NFT collections the player holds
+    -- e.g. {"donkey":true,"mega_donkey":false,"cheetah":true,"puffin":false}
+    collection_flags jsonb,
+    -- signed_message: Algorand signature of the score payload.
+    -- A Supabase Edge Function can verify this with algosdk.verifyBytes()
+    -- before inserting, making scores tamper-proof even without a custom backend.
+    signed_message   text,
+    created_at       timestamptz  not null default now()
   );
 
-  -- Indexes for fast queries
-  create index if not exists idx_lb_score
-    on leaderboard_scores (score desc);
-  create index if not exists idx_lb_wallet
-    on leaderboard_scores (wallet_address);
-  create index if not exists idx_lb_nft
-    on leaderboard_scores (nft_holder, score desc);
+  create index if not exists idx_lb_score   on leaderboard_scores (score desc);
+  create index if not exists idx_lb_wallet  on leaderboard_scores (wallet_address);
+  create index if not exists idx_lb_nft     on leaderboard_scores (nft_holder, score desc);
+  create index if not exists idx_lb_weekly  on leaderboard_scores (created_at desc, score desc);
 
-  -- Row Level Security
   alter table leaderboard_scores enable row level security;
 
-  -- Anyone can read the leaderboard (it's public)
-  create policy "public_read" on leaderboard_scores
-    for select using (true);
+  create policy "public_read" on leaderboard_scores for select using (true);
 
-  -- Anyone with the anon key can insert a score.
-  -- NOTE: This is client-side validation only — fine for a static GitHub Pages
-  -- site. Real anti-cheat would sign scores server-side via a Supabase Edge
-  -- Function so the score value can't be tampered with in DevTools.
+  -- BACKEND VERIFICATION NOTE:
+  -- The insert policy below trusts the client.  For tamper-proof scores, replace
+  -- this with a Supabase Edge Function that:
+  --   1. Receives { payload, signature, walletAddress }
+  --   2. Verifies: algosdk.verifyBytes(msgBytes, sigBytes, pubKey)
+  --   3. Only inserts if the signature is valid
   create policy "public_insert" on leaderboard_scores
-    for insert with check (
-      score >= 0
-      and char_length(display_name) <= 20
-    );
+    for insert with check (score >= 0 and char_length(display_name) <= 20);
+
+  -- If you already created the table without the new columns, run:
+  -- alter table leaderboard_scores add column if not exists collection_flags jsonb;
+  -- alter table leaderboard_scores add column if not exists signed_message text;
 */
 // ================================================================
 
@@ -134,23 +140,36 @@ window.LeaderboardAPI = (() => {
       return;
     }
 
+    // ── Sign the payload (non-fatal if wallet doesn't support signData) ──
+    const signingPayload = {
+      wallet:    WalletAPI.getAddress(),
+      score:     payload.score,
+      run_id:    payload.runId,
+      timestamp: Date.now(),
+    };
+    const signature = await WalletAPI.signScorePayload(signingPayload);
+
     // ── Submit to Supabase ────────────────────────────────────────────
     const displayName = (
       document.getElementById('score-name')?.value.trim() || 'Anonymous'
     ).slice(0, 20);
 
+    const collectionFlags = WalletAPI.getCollectionFlags?.() ?? {};
+
     try {
       const { error } = await _getDb().from(TABLE).upsert({
-        run_id:         payload.runId,
-        wallet_address: WalletAPI.getAddress(),
-        display_name:   displayName,
-        score:          payload.score,
-        total_earned:   payload.totalEarned,
-        level:          payload.level,
-        beauty:         payload.beauty,
-        animals_count:  payload.animals,
-        nft_holder:     WalletAPI.isSupportedHolder(),
-      }, { onConflict: 'run_id' }); // idempotent: same run_id never creates a duplicate
+        run_id:           payload.runId,
+        wallet_address:   WalletAPI.getAddress(),
+        display_name:     displayName,
+        score:            payload.score,
+        total_earned:     payload.totalEarned,
+        level:            payload.level,
+        beauty:           payload.beauty,
+        animals_count:    payload.animals,
+        nft_holder:       WalletAPI.isSupportedHolder(),
+        collection_flags: collectionFlags,
+        signed_message:   signature ?? null,
+      }, { onConflict: 'run_id' });
 
       if (error) throw error;
 
@@ -211,17 +230,23 @@ window.LeaderboardAPI = (() => {
     const tbody = document.getElementById('leaderboard-modal-body');
     if (!tbody) return;
     tbody.innerHTML =
-      '<tr><td colspan="6" style="text-align:center;padding:16px">Loading…</td></tr>';
+      '<tr><td colspan="7" style="text-align:center;padding:16px">Loading…</td></tr>';
 
     try {
       let query = _getDb()
         .from(TABLE)
-        .select('wallet_address, display_name, score, level, nft_holder, created_at')
+        .select('wallet_address, display_name, score, level, nft_holder, collection_flags, created_at')
         .order('score',      { ascending: false })
         .order('created_at', { ascending: true }) // tie-break: older score wins
         .limit(25);
 
-      if (filter === 'holders') query = query.eq('nft_holder', true);
+      if (filter === 'holders') {
+        query = query.eq('nft_holder', true);
+      } else if (filter === 'weekly') {
+        // Last 7 days
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        query = query.gte('created_at', since);
+      }
 
       const { data, error } = await query;
       if (error) throw error;
@@ -231,7 +256,7 @@ window.LeaderboardAPI = (() => {
     } catch (err) {
       console.error('[Leaderboard] load error:', err);
       tbody.innerHTML =
-        `<tr><td colspan="6" style="text-align:center;color:#e94560">` +
+        `<tr><td colspan="7" style="text-align:center;color:#e94560">` +
         `Error: ${err.message}</td></tr>`;
     }
   }
@@ -270,7 +295,7 @@ window.LeaderboardAPI = (() => {
   function renderLeaderboard(entries, tbodyEl) {
     if (!entries.length) {
       tbodyEl.innerHTML =
-        '<tr><td colspan="6" style="text-align:center;padding:16px">' +
+        '<tr><td colspan="7" style="text-align:center;padding:16px">' +
         'No scores yet — be the first!</td></tr>';
       return;
     }
@@ -280,12 +305,14 @@ window.LeaderboardAPI = (() => {
       const wallet = window.WalletAPI?.formatAddress(r.wallet_address)
                      ?? (r.wallet_address.slice(0, 6) + '…' + r.wallet_address.slice(-4));
       const date   = new Date(r.created_at).toLocaleDateString();
+      const badges = window.HolderPerks?.badgesForFlags(r.collection_flags) ?? '';
       return `<tr class="${cls}">
         <td class="lb-rank">${i + 1}</td>
         <td>${_esc(r.display_name)}${r.nft_holder ? ' <span class="nft-badge">🏆</span>' : ''}</td>
         <td class="lb-wallet">${wallet}</td>
         <td>Lv${r.level}</td>
         <td class="lb-score">$${r.score.toLocaleString()}</td>
+        <td class="lb-badges">${badges}</td>
         <td class="lb-date">${date}</td>
       </tr>`;
     }).join('');

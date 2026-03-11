@@ -817,11 +817,13 @@ function spawnVisitor() {
   const px = ex * TILE_SIZE + TILE_SIZE / 2;
   const py = ey * TILE_SIZE + TILE_SIZE / 2;
 
+  const baseLifetime = 60_000 + Math.random() * 40_000;
+  const lifetimeBonus = window.HolderPerks?.getVisitorLifetimeBonus() ?? 0;
   gs.visitors.push({
     id: Math.random(),
     x: px, y: py, tx: px, ty: py,
     speed: 0.7 + Math.random() * 0.7,
-    lifetime: 60_000 + Math.random() * 40_000,
+    lifetime: baseLifetime * (1 + lifetimeBonus),
     incomeTimer: 2500 + Math.random() * 1000,
     color: `hsl(${Math.floor(Math.random() * 360)},80%,65%)`,
   });
@@ -998,7 +1000,10 @@ function calcVisitorIncome(v) {
 
   // Nearby animals
   for (const a of gs.animals) {
-    if (Math.hypot(a.x - v.x, a.y - v.y) < animalRange) appeal += a.def.appeal;
+    if (Math.hypot(a.x - v.x, a.y - v.y) < animalRange) {
+      const mult = window.HolderPerks?.getAnimalIncomeMultiplier(a.type) ?? 1;
+      appeal += a.def.appeal * mult;
+    }
   }
 
   // Nearby buildings

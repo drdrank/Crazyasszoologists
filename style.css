@@ -564,10 +564,11 @@ html, body {
 .rank-silver td { color: #b0b8c1; }
 .rank-bronze td { color: #cd7f32; }
 
-.lb-rank  { font-weight: bold; width: 28px; }
-.lb-score { color: var(--accent2); font-weight: bold; }
+.lb-rank   { font-weight: bold; width: 28px; }
+.lb-score  { color: var(--accent2); font-weight: bold; }
 .lb-wallet { color: var(--text-dim); font-size: 10px; }
 .lb-date   { color: var(--text-dim); font-size: 10px; }
+.lb-badges { font-size: 14px; letter-spacing: 2px; }
 
 /* ══════════════════════════════════════════════════════════════
    FULL LEADERBOARD MODAL

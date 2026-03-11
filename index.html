@@ -144,6 +144,8 @@
                   onclick="switchLBTab('global')">🌍 Global Top 25</button>
           <button class="lb-tab" id="tab-holders"
                   onclick="switchLBTab('holders')">🏆 Holders Only</button>
+          <button class="lb-tab" id="tab-weekly"
+                  onclick="switchLBTab('weekly')">🗓 Weekly</button>
         </div>
 
         <!-- Leaderboard table -->
@@ -156,11 +158,12 @@
                 <th>Wallet</th>
                 <th>Lv</th>
                 <th>Score</th>
+                <th>Badges</th>
                 <th>Date</th>
               </tr>
             </thead>
             <tbody id="leaderboard-modal-body">
-              <tr><td colspan="6" style="text-align:center;padding:16px">Loading…</td></tr>
+              <tr><td colspan="7" style="text-align:center;padding:16px">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -349,6 +352,7 @@
   </div><!-- end app -->
 
   <script src="game.js?v=4"></script>
+  <script src="holder_perks.js?v=4"></script>
   <script src="wallet.js?v=4"></script>
   <script src="leaderboard.js?v=4"></script>
 </body>
