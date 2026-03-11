@@ -17,7 +17,7 @@
 
 // TODO: paste your WalletConnect Project ID here
 // Get one free at https://cloud.walletconnect.com → New Project
-const WALLETCONNECT_PROJECT_ID = 'YOUR_WALLETCONNECT_PROJECT_ID';
+const WALLETCONNECT_PROJECT_ID = '3d59dcc2a9ef31507918429417f52823';
 
 // TODO: add your Crazy-ASS Zoologists NFT asset IDs (Algorand ASA IDs)
 // Example: [123456789, 987654321]
