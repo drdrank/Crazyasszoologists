@@ -353,8 +353,9 @@ function createGameState() {
 let gs = createGameState();
 
 // ── Camera ───────────────────────────────────────────────────────
-const camera = { x: 0, y: 0 };
-const CAM_SPEED = 320; // pixels per second
+const camera = { x: 0, y: 0, angle: 0 };
+const CAM_SPEED  = 320;          // pixels per second
+const CAM_ROT_SPEED = Math.PI;   // radians per second (180°/s)
 
 // Keys held down
 const keysDown = new Set();
@@ -838,6 +839,12 @@ function updateCamera(dt) {
   if (keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D')) camera.x += spd;
   if (keysDown.has('ArrowUp')    || keysDown.has('w') || keysDown.has('W')) camera.y -= spd;
   if (keysDown.has('ArrowDown')  || keysDown.has('s') || keysDown.has('S')) camera.y += spd;
+
+  // Q / E  — rotate view
+  const rot = CAM_ROT_SPEED * (dt / 1000);
+  if (keysDown.has('q') || keysDown.has('Q')) camera.angle -= rot;
+  if (keysDown.has('e') || keysDown.has('E')) camera.angle += rot;
+
   clampCamera();
 }
 
@@ -1257,15 +1264,36 @@ function render() {
     return;
   }
 
-  // ── World-space drawing (translated by camera) ──────────────
+  // ── World-space drawing (translated + rotated by camera) ────
   ctx.save();
-  ctx.translate(-camera.x, -camera.y);
+  // Rotate around the viewport centre, then apply pan offset
+  ctx.translate(vw / 2, vh / 2);
+  ctx.rotate(camera.angle);
+  ctx.translate(-vw / 2 - camera.x, -vh / 2 - camera.y);
 
-  // Only draw tiles that are visible on screen
-  const tStartX = Math.max(0, Math.floor(camera.x / TILE_SIZE));
-  const tStartY = Math.max(0, Math.floor(camera.y / TILE_SIZE));
-  const tEndX   = Math.min(GRID_W - 1, Math.ceil((camera.x + vw) / TILE_SIZE));
-  const tEndY   = Math.min(GRID_H - 1, Math.ceil((camera.y + vh) / TILE_SIZE));
+  // Visible tile range: when rotated expand bounds by the viewport diagonal
+  let tStartX, tStartY, tEndX, tEndY;
+  if (camera.angle === 0) {
+    tStartX = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+    tStartY = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+    tEndX   = Math.min(GRID_W - 1, Math.ceil((camera.x + vw) / TILE_SIZE));
+    tEndY   = Math.min(GRID_H - 1, Math.ceil((camera.y + vh) / TILE_SIZE));
+  } else {
+    // Compute world-space AABB of the 4 rotated viewport corners
+    const c = Math.cos(-camera.angle), s = Math.sin(-camera.angle);
+    const corners = [
+      [0, 0], [vw, 0], [0, vh], [vw, vh]
+    ].map(([sx, sy]) => {
+      const dx = sx - vw / 2, dy = sy - vh / 2;
+      return [dx * c - dy * s + vw / 2 + camera.x,
+              dx * s + dy * c + vh / 2 + camera.y];
+    });
+    const wxs = corners.map(p => p[0]), wys = corners.map(p => p[1]);
+    tStartX = Math.max(0, Math.floor(Math.min(...wxs) / TILE_SIZE) - 1);
+    tStartY = Math.max(0, Math.floor(Math.min(...wys) / TILE_SIZE) - 1);
+    tEndX   = Math.min(GRID_W - 1, Math.ceil(Math.max(...wxs) / TILE_SIZE) + 1);
+    tEndY   = Math.min(GRID_H - 1, Math.ceil(Math.max(...wys) / TILE_SIZE) + 1);
+  }
 
   drawTiles(tStartX, tStartY, tEndX, tEndY);
   drawGridLines(tStartX, tStartY, tEndX, tEndY);
@@ -1277,6 +1305,19 @@ function render() {
   drawFloatingTexts();
 
   ctx.restore();
+
+  // ── Rotation HUD (screen-space) ─────────────────────────────
+  if (camera.angle !== 0) {
+    const deg  = ((camera.angle * 180 / Math.PI) % 360 + 360) % 360;
+    const label = `⟳ ${Math.round(deg)}°  Q/E to rotate`;
+    const tw = label.length * 6.5 + 12;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(vw / 2 - tw / 2, 6, tw, 18);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 10px Courier New';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, vw / 2, 15);
+  }
 
   // ── Minimap (screen-space) ───────────────────────────────────
   drawMinimap();
@@ -1826,8 +1867,12 @@ canvas.addEventListener('mousedown', e => {
 
 canvas.addEventListener('mousemove', e => {
   if (gs.isPanDragging) {
-    camera.x = gs.panCamStartX - (e.clientX - gs.panStartX);
-    camera.y = gs.panCamStartY - (e.clientY - gs.panStartY);
+    const dsx = e.clientX - gs.panStartX;
+    const dsy = e.clientY - gs.panStartY;
+    // Pan in screen space regardless of rotation angle
+    const c = Math.cos(camera.angle), s = Math.sin(camera.angle);
+    camera.x = gs.panCamStartX - dsx * c - dsy * s;
+    camera.y = gs.panCamStartY + dsx * s - dsy * c;
     clampCamera();
     return;
   }
@@ -1899,11 +1944,19 @@ document.addEventListener('keyup', e => keysDown.delete(e.key));
 // Convert mouse-event screen position → world grid position
 function getGridPos(e) {
   const rect   = canvas.getBoundingClientRect();
-  // The canvas CSS fills the container; its actual pixel size may differ
   const scaleX = canvas.width  / rect.width;
   const scaleY = canvas.height / rect.height;
-  const wx     = (e.clientX - rect.left) * scaleX + camera.x;
-  const wy     = (e.clientY - rect.top)  * scaleY + camera.y;
+  // Canvas-pixel position of the cursor
+  const sx = (e.clientX - rect.left) * scaleX;
+  const sy = (e.clientY - rect.top)  * scaleY;
+  // Undo the rotation that was applied around the viewport centre
+  const vw = canvas.width, vh = canvas.height;
+  const dx = sx - vw / 2, dy = sy - vh / 2;
+  const c  = Math.cos(-camera.angle), s = Math.sin(-camera.angle);
+  const rx = dx * c - dy * s;
+  const ry = dx * s + dy * c;
+  const wx = rx + vw / 2 + camera.x;
+  const wy = ry + vh / 2 + camera.y;
   return { gx: Math.floor(wx / TILE_SIZE), gy: Math.floor(wy / TILE_SIZE) };
 }
 
